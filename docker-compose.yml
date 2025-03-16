@@ -1,0 +1,90 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      - "5432:5432"
+    networks:
+      - pg_backup_network
+
+  pgbackrest:
+    image: woblerr/pgbackrest:2.54.2
+    container_name: pgbackrest
+    restart: always
+    command: ["tail", "-f", "/dev/null"]
+    environment:
+      - BACKREST_USER=pgbackrest
+      - BACKREST_UID=2001
+      - BACKREST_GROUP=pgbackrest
+      - BACKREST_GID=2001
+    volumes:
+      - ./config/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf
+      - pgbackrest_data:/var/lib/pgbackrest
+      - pgbackrest_logs:/var/log/pgbackrest
+      - ./backend/scripts:/scripts
+    depends_on:
+      - postgres
+    networks:
+      - pg_backup_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pg_backup_backend
+    restart: always
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PGBACKREST_HOST: pgbackrest
+      PGBACKREST_EXECUTABLE: "/app/backend/scripts/pgbackrest.sh"
+    volumes:
+      - ./config:/app/config
+      - ./scripts:/app/scripts
+      - pgbackrest_logs:/var/log/pgbackrest:ro
+      - ./backend/scripts:/app/backend/scripts
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - pgbackrest
+    networks:
+      - pg_backup_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pg_backup_frontend
+    restart: always
+    env_file:
+      - ./frontend/.env
+    environment:
+      REACT_APP_API_URL: http://localhost:3000/api
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - pg_backup_network
+
+networks:
+  pg_backup_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  pgbackrest_data:
+  pgbackrest_logs:

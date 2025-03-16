@@ -1,0 +1,26 @@
+# PostgreSQL Backup Crontab
+# This file contains scheduled backup tasks for PostgreSQL using pgBackRest
+
+# Format:
+# minute hour day month weekday command
+
+# Full backups twice a day (1 AM and 1 PM)
+0 1,13 * * * docker exec pgbackrest pgbackrest --stanza=main backup --type=full
+
+# Incremental backups every hour (except when full backups run)
+0 0,2-12,14-23 * * * docker exec pgbackrest pgbackrest --stanza=main backup --type=incr
+
+# Differential backups every 6 hours
+0 4,10,16,22 * * * docker exec pgbackrest pgbackrest --stanza=main backup --type=diff
+
+# Cleanup old backups daily at 3 AM
+0 3 * * * docker exec pgbackrest pgbackrest --stanza=main expire
+
+# Check stanza integrity weekly on Sunday at 2 AM
+0 2 * * 0 docker exec pgbackrest pgbackrest --stanza=main check
+
+# Log rotation daily at 4 AM
+0 4 * * * find /var/log/pgbackrest -name "*.log" -mtime +7 -delete
+
+# Monitor backup status daily at 5 AM
+0 5 * * * /app/scripts/monitor.sh main > /var/log/pgbackrest/monitor-$(date +\%Y\%m\%d).log 2>&1 
